@@ -22,23 +22,27 @@ if "input_box" not in st.session_state:
 def mal_rewrite_for_group(user, text, group_context):
     """
     最小MALロジック：
-    - ちょっとだけ丁寧にしてグループ用に整形する
-    - 個人へのフィードバック文も返す
-    将来的にここをLLMやMAL本体に差し替える。
+    - グループ表示では sender が別枠で出るので、本文から名前は外す
+    - ただしフィードバック文の中では「user：本文」としてプレビューを見せる
     """
-    # 例: 行頭にユーザー名をつけ、長い文章なら一部要約するなど
     trimmed = text.strip()
     if len(trimmed) > 120:
         trimmed = trimmed[:120] + "…"
 
-    group_msg = f"{user}：{trimmed}"
+    # グループ板に出す本文（名前を含めない）
+    group_msg = trimmed
+
+    # MAL内部の「投稿イメージ」としては名前付きで持つ
+    preview = f"{user}：{trimmed}"
+
     feedback = (
         "MALよりフィードバック：\n"
-        f"・グループにはこう投稿しました → 「{group_msg}」\n"
+        f"・グループにはこう投稿しました → 「{preview}」\n"
         "・トーン：フラット\n"
         "・補足したいことがあれば、もう少し具体例を書いてみても良いかもしれません。"
     )
     return group_msg, feedback
+
 
 def mal_group_summary():
     """
