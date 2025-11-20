@@ -82,7 +82,7 @@ with col1:
 
 # --- 右: 自分 ↔ MAL のやり取り ---
 with col2:
-    st.subheader(f"あなたと {current_user} MALｓの対話")
+    st.subheader(f"あなたと {current_user} MALの対話")
 
     # ★ 送信処理をコールバック関数にまとめる
     def send_to_mal():
