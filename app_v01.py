@@ -3,7 +3,7 @@ from datetime import datetime
 
 st.set_page_config(page_title="MAL Group Prototype", layout="wide")
 
-USERS = ["きむみんそ", "黒瀬", "田所"]
+USERS = ["金", "黒瀬", "田所"]
 
 # ---------- 初期化 ----------
 if "group_log" not in st.session_state:
