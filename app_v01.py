@@ -61,7 +61,7 @@ def mal_group_summary():
 # ---------- UI ----------
 st.sidebar.title("MAL Group Prototype")
 current_user = st.sidebar.selectbox("あなたは誰？", USERS)
-st.sidebar.write(f"あなたには専用の MAL_{current_user} がいます。")
+st.sidebar.write(f"あなたには専用の {current_user} MALがいます。")
 
 st.title("MAL付きグループチャット（最小プロトタイプ）")
 
