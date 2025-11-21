@@ -1,22 +1,111 @@
 import streamlit as st
 from datetime import datetime
+import requests
+import json
+import base64
 
 st.set_page_config(page_title="MAL Group Prototype", layout="wide")
 
 USERS = ["金", "黒瀬", "田所"]
 
-# ---------- 初期化 ----------
-if "group_log" not in st.session_state:
-    st.session_state.group_log = []  # [{"time":..., "sender":..., "text":...}, ...]
+# ---------- GitHub設定 ----------
+GITHUB_TOKEN = st.secrets["github"]["token"]
+GITHUB_OWNER = st.secrets["github"]["owner"]
+GITHUB_REPO = st.secrets["github"]["repo"]
+GITHUB_FILE_PATH = st.secrets["github"]["file_path"]  # 例: "data/group_log.json"
+GITHUB_BRANCH = st.secrets["github"].get("branch", "main")
 
+GITHUB_API_URL = (
+    f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}"
+)
+
+# ---------- GitHubユーティリティ ----------
+def load_group_log_from_github():
+    """GitHub上の JSON から group_log を読み込む。なければ空リスト。"""
+    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    r = requests.get(GITHUB_API_URL, headers=headers)
+
+    if r.status_code == 404:
+        # まだファイルが存在しない場合 → 空のログ
+        st.session_state.github_file_sha = None
+        return []
+
+    r.raise_for_status()
+    data = r.json()
+    content_b64 = data["content"]
+    content_str = base64.b64decode(content_b64).decode("utf-8")
+
+    raw_list = json.loads(content_str)  # [{time: "...", sender: "...", text: "..."}]
+    log = []
+    for m in raw_list:
+        try:
+            t = datetime.fromisoformat(m["time"])
+        except Exception:
+            t = datetime.strptime(m["time"], "%Y-%m-%dT%H:%M:%S")
+        log.append({"time": t, "sender": m["sender"], "text": m["text"]})
+
+    # 後で更新するときに必要な sha
+    st.session_state.github_file_sha = data["sha"]
+    return log
+
+
+def save_group_log_to_github(log):
+    """group_log を GitHub 上の JSON に書き戻す。"""
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    # datetime を文字列に直してから JSON に
+    serializable = [
+        {
+            "time": m["time"].isoformat(),
+            "sender": m["sender"],
+            "text": m["text"],
+        }
+        for m in log
+    ]
+    content_str = json.dumps(serializable, ensure_ascii=False, indent=2)
+    content_b64 = base64.b64encode(content_str.encode("utf-8")).decode("ascii")
+
+    payload = {
+        "message": "Update group_log from MAL app",
+        "content": content_b64,
+        "branch": GITHUB_BRANCH,
+    }
+
+    # 既存ファイルなら sha が必要
+    sha = st.session_state.get("github_file_sha")
+    if sha is not None:
+        payload["sha"] = sha
+
+    r = requests.put(GITHUB_API_URL, headers=headers, data=json.dumps(payload))
+    r.raise_for_status()
+    data = r.json()
+    # 新しい sha を保存
+    st.session_state.github_file_sha = data["content"]["sha"]
+
+
+# ---------- 初期化 ----------
+# group_log は GitHub 上の JSON をソース・オブ・トゥルースにする
+if "group_log" not in st.session_state:
+    try:
+        st.session_state.group_log = load_group_log_from_github()
+    except Exception as e:
+        st.session_state.group_log = []
+        st.session_state.github_file_sha = None
+        st.sidebar.error(f"GitHubからログを読み込めませんでした: {e}")
+
+# 個人用 MAL 状態はローカルセッションでOK
 if "mal_states" not in st.session_state:
     st.session_state.mal_states = {
         u: {"personal_log": [], "feedback_log": []} for u in USERS
     }
 
-# ★ input_box もここで初期化しておく（ウィジェットを作る前）
+# input_box 初期化
 if "input_box" not in st.session_state:
     st.session_state.input_box = ""
+
 
 # ---------- ユーティリティ ----------
 def mal_rewrite_for_group(user, text, group_context):
@@ -45,14 +134,9 @@ def mal_rewrite_for_group(user, text, group_context):
 
 
 def mal_group_summary():
-    """
-    MAL同士の“会話”の雰囲気を出すための簡易サマリー。
-    本当はここにMALたちの内部対話を載せるイメージ。
-    """
     logs = st.session_state.group_log
     if not logs:
         return "（まだグループでのやり取りはありません）"
-
     last = logs[-5:]
     users_involved = sorted({m["sender"] for m in last})
     return f"MAL総評：直近では {', '.join(users_involved)} が対話中です。"
@@ -62,6 +146,14 @@ def mal_group_summary():
 st.sidebar.title("MAL Group Prototype")
 current_user = st.sidebar.selectbox("あなたは誰？", USERS)
 st.sidebar.write(f"あなたには専用の {current_user} MALがいます。")
+
+# 手動リロードボタン（GitHubの最新状態を取り込みたいとき用）
+if st.sidebar.button("GitHubから最新グループログを再読み込み"):
+    try:
+        st.session_state.group_log = load_group_log_from_github()
+        st.sidebar.success("最新のログを読み込みました。")
+    except Exception as e:
+        st.sidebar.error(f"再読み込みに失敗しました: {e}")
 
 st.title("MAL付きグループチャット（最小プロトタイプ）")
 
@@ -84,7 +176,6 @@ with col1:
 with col2:
     st.subheader(f"あなたと {current_user} MALの対話")
 
-    # ★ 送信処理をコールバック関数にまとめる
     def send_to_mal():
         text = st.session_state.input_box.strip()
         if not text:
@@ -102,27 +193,33 @@ with col2:
             st.session_state.group_log,
         )
 
-        # グループ板に投稿
+        # グループ板に投稿（ローカルの group_log を更新）
         st.session_state.group_log.append(
             {"time": datetime.now(), "sender": current_user, "text": group_msg}
         )
+
+        # GitHub に保存（ここがマルチユーザー同期のキモ）
+        try:
+            save_group_log_to_github(st.session_state.group_log)
+        except Exception as e:
+            st.error(f"GitHubへの保存に失敗しました: {e}")
 
         # 個人フィードバック保存
         st.session_state.mal_states[current_user]["feedback_log"].append(
             {"time": datetime.now(), "text": feedback}
         )
 
-        # 入力欄をクリア（←ここならOK）
+        # 入力欄をクリア
         st.session_state.input_box = ""
 
-    # 入力欄（値は session_state.input_box と同期）
+    # 入力欄
     st.text_area(
         "MALにまず本音で書き込んでください（グループにはまだ出ません）",
         height=150,
         key="input_box",
     )
 
-    # ボタン：押されたときだけ send_to_mal が呼ばれる
+    # ボタン
     st.button("MALに送る → MALが調整してグループに投稿", on_click=send_to_mal)
 
     # フィードバック表示
@@ -133,4 +230,5 @@ with col2:
         st.code(last_fb["text"])
     else:
         st.caption("まだMALからのフィードバックはありません。")
+
 
