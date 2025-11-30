@@ -3,7 +3,6 @@ from datetime import datetime
 import requests
 import json
 import base64
-import openai
 
 st.set_page_config(page_title="MAL Group Prototype", layout="wide")
 
