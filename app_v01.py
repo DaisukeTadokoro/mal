@@ -19,6 +19,12 @@ GITHUB_API_URL = (
     f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}"
 )
 
+# ---------- OpenAI設定 ----------
+OPENAI_API_KEY = st.secrets["openai"]["api_key"]
+OPENAI_MODEL = st.secrets["openai"].get("model", "gpt-4o-mini")
+OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+
+
 # ---------- GitHubユーティリティ ----------
 def load_group_log_from_github():
     """GitHub上の JSON から group_log を読み込む。なければ空リスト。"""
@@ -86,6 +92,52 @@ def save_group_log_to_github(log):
     st.session_state.github_file_sha = data["content"]["sha"]
 
 
+# ---------- GPT要約ユーティリティ ----------
+def summarize_with_gpt(text: str, max_chars: int = 120) -> str:
+    """
+    OpenAI Chat Completions API を使って、
+    text を max_chars 文字以内の日本語に要約する。
+    """
+    prompt = (
+        f"次の文章を {max_chars} 文字以内で、日本語で自然に要約してください。"
+        f"重要な情報はできるだけ残してください。\n\n"
+        f"---\n{text}\n---"
+    )
+
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": OPENAI_MODEL,
+        "messages": [
+            {
+                "role": "system",
+                "content": "あなたはグループチャット用に文章を短くまとめるアシスタントです。",
+            },
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.4,
+    }
+
+    try:
+        r = requests.post(OPENAI_API_URL, headers=headers, json=payload, timeout=30)
+        r.raise_for_status()
+        data = r.json()
+        summary = data["choices"][0]["message"]["content"].strip()
+        # 念のため max_chars でカット
+        if len(summary) > max_chars:
+            summary = summary[:max_chars] + "…"
+        return summary
+    except Exception as e:
+        # 失敗したときは、元文を120字カットして返す
+        st.sidebar.error(f"要約APIエラー: {e}")
+        trimmed = text.strip()
+        if len(trimmed) > max_chars:
+            trimmed = trimmed[:max_chars] + "…"
+        return trimmed
+
+
 # ---------- 初期化 ----------
 # group_log は GitHub 上の JSON をソース・オブ・トゥルースにする
 if "group_log" not in st.session_state:
@@ -107,28 +159,28 @@ if "input_box" not in st.session_state:
     st.session_state.input_box = ""
 
 
-# ---------- ユーティリティ ----------
+# ---------- MALロジック ----------
 def mal_rewrite_for_group(user, text, group_context):
     """
-    最小MALロジック：
-    - グループ表示では sender が別枠で出るので、本文から名前は外す
-    - ただしフィードバック文の中では「user：本文」としてプレビューを見せる
+    MALロジック（GPT要約版）:
+    - ユーザーの本音テキストを GPT で120字以内に要約
+    - グループ板には要約のみ（名前なし）
+    - フィードバックでプレビューとアドバイスを返す
     """
-    trimmed = text.strip()
-    if len(trimmed) > 120:
-        trimmed = trimmed[:120] + "…"
+    original = text.strip()
+    summarized = summarize_with_gpt(original, max_chars=120)
 
     # グループ板に出す本文（名前を含めない）
-    group_msg = trimmed
+    group_msg = summarized
 
     # MAL内部の「投稿イメージ」としては名前付きで持つ
-    preview = f"{user}：{trimmed}"
+    preview = f"{user}：{summarized}"
 
     feedback = (
         "MALよりフィードバック：\n"
         f"・グループにはこう投稿しました → 「{preview}」\n"
-        "・トーン：フラット\n"
-        "・補足したいことがあれば、もう少し具体例を書いてみても良いかもしれません。"
+        "・元の文章のニュアンスをなるべく残しつつ、120字以内に要約しました。\n"
+        "・もし伝わりきらない部分があれば、追加でMALに補足を書いてください。"
     )
     return group_msg, feedback
 
@@ -155,7 +207,7 @@ if st.sidebar.button("GitHubから最新グループログを再読み込み"):
     except Exception as e:
         st.sidebar.error(f"再読み込みに失敗しました: {e}")
 
-st.title("MAL付きグループチャット（最小プロトタイプ）")
+st.title("MAL付きグループチャット（GPT要約バージョン）")
 
 col1, col2 = st.columns([2, 1])
 
@@ -181,12 +233,14 @@ with col2:
         if not text:
             return
 
+        now = datetime.now()
+
         # 個人ログに保存
         st.session_state.mal_states[current_user]["personal_log"].append(
-            {"time": datetime.now(), "text": text}
+            {"time": now, "text": text}
         )
 
-        # MALがグループ用に整形
+        # MALがグループ用に整形（GPT要約）
         group_msg, feedback = mal_rewrite_for_group(
             current_user,
             text,
@@ -195,7 +249,7 @@ with col2:
 
         # グループ板に投稿（ローカルの group_log を更新）
         st.session_state.group_log.append(
-            {"time": datetime.now(), "sender": current_user, "text": group_msg}
+            {"time": now, "sender": current_user, "text": group_msg}
         )
 
         # GitHub に保存（ここがマルチユーザー同期のキモ）
@@ -206,7 +260,7 @@ with col2:
 
         # 個人フィードバック保存
         st.session_state.mal_states[current_user]["feedback_log"].append(
-            {"time": datetime.now(), "text": feedback}
+            {"time": now, "text": feedback}
         )
 
         # 入力欄をクリア
@@ -220,7 +274,7 @@ with col2:
     )
 
     # ボタン
-    st.button("MALに送る → MALが調整してグループに投稿", on_click=send_to_mal)
+    st.button("MALに送る → MALが要約してグループに投稿", on_click=send_to_mal)
 
     # フィードバック表示
     st.markdown("#### MALからのフィードバック")
