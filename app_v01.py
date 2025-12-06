@@ -95,13 +95,13 @@ def save_group_log_to_github(log):
 # ---------- GPT要約ユーティリティ ----------
 def summarize_with_gpt(text: str, max_chars: int = 120) -> str:
     """
-    OpenAI Chat Completions API を使って、
-    text を max_chars 文字以内の「英語要約」にする。
+    入力が日本語でも英語でも、
+    常に「英語の短い要約」だけを返す。
     """
     prompt = (
-        f"Summarize the following text for a group chat in at most {max_chars} characters. "
-        f"Output only the English summary. The input may be in Japanese, "
-        f"but always respond in English. Preserve as much important information as possible.\n\n"
+        f"Summarize the following message for a group chat in at most {max_chars} characters. "
+        f"The input may be in Japanese or English, but you must always reply only in English. "
+        f"Keep as much important information as possible.\n\n"
         f"---\n{text}\n---"
     )
 
@@ -116,7 +116,7 @@ def summarize_with_gpt(text: str, max_chars: int = 120) -> str:
                 "role": "system",
                 "content": (
                     "You are an assistant that creates short English summaries for a group chat. "
-                    "Even if the user writes in Japanese, you must always reply only in English."
+                    "No matter what language the user writes in, you must always respond only in English."
                 ),
             },
             {"role": "user", "content": prompt},
@@ -129,7 +129,6 @@ def summarize_with_gpt(text: str, max_chars: int = 120) -> str:
         r.raise_for_status()
         data = r.json()
         summary = data["choices"][0]["message"]["content"].strip()
-        # 念のため max_chars でカット（英語だけなので先頭だけ切ってOK）
         if len(summary) > max_chars:
             summary = summary[:max_chars] + "…"
         return summary
