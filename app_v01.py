@@ -96,12 +96,12 @@ def save_group_log_to_github(log):
 def summarize_with_gpt(text: str, max_chars: int = 120) -> str:
     """
     OpenAI Chat Completions API を使って、
-    text を max_chars 文字以内の日本語に要約する。
+    text を max_chars 文字以内の「英語要約」にする。
     """
     prompt = (
-        f"Please summarize the following text naturally within {max_chars} characters, "
-        f"then translate the summary into English. "
-        f"Please retain as much important information as possible.\n\n"
+        f"Summarize the following text for a group chat in at most {max_chars} characters. "
+        f"Output only the English summary. The input may be in Japanese, "
+        f"but always respond in English. Preserve as much important information as possible.\n\n"
         f"---\n{text}\n---"
     )
 
@@ -114,7 +114,10 @@ def summarize_with_gpt(text: str, max_chars: int = 120) -> str:
         "messages": [
             {
                 "role": "system",
-                "content": "あなたはグループチャット用に文章を短くまとめるアシスタントです。",
+                "content": (
+                    "You are an assistant that creates short English summaries for a group chat. "
+                    "Even if the user writes in Japanese, you must always reply only in English."
+                ),
             },
             {"role": "user", "content": prompt},
         ],
@@ -126,17 +129,17 @@ def summarize_with_gpt(text: str, max_chars: int = 120) -> str:
         r.raise_for_status()
         data = r.json()
         summary = data["choices"][0]["message"]["content"].strip()
-        # 念のため max_chars でカット
+        # 念のため max_chars でカット（英語だけなので先頭だけ切ってOK）
         if len(summary) > max_chars:
             summary = summary[:max_chars] + "…"
         return summary
     except Exception as e:
-        # 失敗したときは、元文を120字カットして返す
         st.sidebar.error(f"要約APIエラー: {e}")
         trimmed = text.strip()
         if len(trimmed) > max_chars:
             trimmed = trimmed[:max_chars] + "…"
         return trimmed
+
 
 
 # ---------- 初期化 ----------
