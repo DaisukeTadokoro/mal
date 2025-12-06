@@ -21,7 +21,7 @@ GITHUB_API_URL = (
 
 # ---------- OpenAI設定 ----------
 OPENAI_API_KEY = st.secrets["openai"]["api_key"]
-OPENAI_MODEL = st.secrets["openai"].get("model", "gpt-4o-mini")
+OPENAI_MODEL = st.secrets["openai"].get("model", "gpt-4o")
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 
 
