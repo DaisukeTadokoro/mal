@@ -99,8 +99,9 @@ def summarize_with_gpt(text: str, max_chars: int = 120) -> str:
     text を max_chars 文字以内の日本語に要約する。
     """
     prompt = (
-        f"次の文章を {max_chars} 文字以内で、自然に要約してください。そして英語に翻訳してください。"
-        f"重要な情報はできるだけ残してください。\n\n"
+        f"Please summarize the following text naturally within {max_chars} characters, "
+        f"then translate the summary into English. "
+        f"Please retain as much important information as possible.\n\n"
         f"---\n{text}\n---"
     )
 
