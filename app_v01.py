@@ -97,10 +97,14 @@ def summarize_with_gpt(text: str, max_chars: int = 120) -> str:
     """
     入力が日本語でも英語でも、
     常に「英語の短い要約」だけを返す。
+    日本語の文字（漢字・ひらがな・カタカナ）は一切使わない。
     """
     prompt = (
-        f"Summarize the following message for a group chat in at most {max_chars} characters. "
-        f"The input may be in Japanese or English, but you must always reply only in English. "
+        f"Summarize the following message for a group chat in at most {max_chars} "
+        f"English characters (letters, numbers, spaces, and punctuation). "
+        f"The input may be in Japanese or English, but you must ALWAYS reply ONLY in English. "
+        f"Do NOT use any Japanese characters (no Kanji, no Hiragana, no Katakana). "
+        f"It is OK to use fewer characters than {max_chars}. "
         f"Keep as much important information as possible.\n\n"
         f"---\n{text}\n---"
     )
@@ -116,7 +120,8 @@ def summarize_with_gpt(text: str, max_chars: int = 120) -> str:
                 "role": "system",
                 "content": (
                     "You are an assistant that creates short English summaries for a group chat. "
-                    "No matter what language the user writes in, you must always respond only in English."
+                    "No matter what language the user writes in, you must ALWAYS respond ONLY in English. "
+                    "Do NOT output any Japanese characters (no Kanji, no Hiragana, no Katakana)."
                 ),
             },
             {"role": "user", "content": prompt},
@@ -129,6 +134,7 @@ def summarize_with_gpt(text: str, max_chars: int = 120) -> str:
         r.raise_for_status()
         data = r.json()
         summary = data["choices"][0]["message"]["content"].strip()
+        # 念のため max_chars でカット（英語だけなので先頭を切ればOK）
         if len(summary) > max_chars:
             summary = summary[:max_chars] + "…"
         return summary
@@ -138,8 +144,6 @@ def summarize_with_gpt(text: str, max_chars: int = 120) -> str:
         if len(trimmed) > max_chars:
             trimmed = trimmed[:max_chars] + "…"
         return trimmed
-
-
 
 # ---------- 初期化 ----------
 # group_log は GitHub 上の JSON をソース・オブ・トゥルースにする
